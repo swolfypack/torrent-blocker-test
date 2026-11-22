@@ -30,7 +30,7 @@
 ## Установка и удаление
 
 > [!IMPORTANT]
-> Команды рассчитаны на **Ubuntu/Debian с systemd** и репозиторий `swolfypack/torrent-blocker-test`, где исходники TorrentGuard находятся в папке `torrent-guard/`. Для изменения firewall нужны root-права. Перед установкой на удалённый VPS рекомендуется иметь доступ к консоли хостера.
+> Команды рассчитаны на **Ubuntu/Debian с systemd** и репозиторий `swolfypack/torrent-blocker-test`, где `config/`, `scripts/`, `systemd/` и другие файлы находятся в корне репозитория. Для изменения firewall нужны root-права. Перед установкой на удалённый VPS рекомендуется иметь доступ к консоли хостера.
 >
 > При выполнении `curl | sudo bash` вы запускаете код из GitHub с правами root. Для более безопасного варианта сначала скачайте и проверьте `install.sh`, затем запустите его отдельно.
 
@@ -48,11 +48,7 @@ sudo apt update && sudo apt install -y curl ca-certificates
 curl -fsSL https://raw.githubusercontent.com/swolfypack/torrent-blocker-test/main/install.sh | sudo bash
 ```
 
-Корневой [`install.sh`](install.sh) скачивает архив репозитория, проверяет наличие файлов TorrentGuard и запускает обычный `torrent-guard/scripts/install.sh` из временной папки. Для скачивания архива используются `curl` и `tar`; сам установщик требует `iptables`, `iproute2`, `util-linux` и systemd. Если они отсутствуют, установите зависимости:
-
-```bash
-sudo apt update && sudo apt install -y iptables iproute2 util-linux
-```
+Корневой [`install.sh`](install.sh) скачивает архив репозитория **с папками в корне**, проверяет наличие `scripts/`, `config/` и `systemd/`, затем запускает `scripts/install.sh` из временной директории. Отдельная папка `torrent-guard/` не требуется. В Ubuntu/Debian недостающие `iptables`, `iproute2` и `util-linux` установятся автоматически через `apt-get`. Для скачивания необходимы `curl` и `tar`, а для автозапуска — systemd.
 
 После установки будут созданы `/usr/local/sbin/torrent-guard`, `/etc/systemd/system/torrent-guard.service` и (при первой установке) `/etc/torrent-guard.conf`. Установщик включит автозапуск и применит правила. При повторной установке существующая конфигурация сохраняется.
 
@@ -97,7 +93,7 @@ sudo torrent-guard status
 Для удаления установленной программы, службы systemd и управляемых правил IPv4/IPv6 без клонирования репозитория:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/swolfypack/torrent-blocker-test/main/torrent-guard/scripts/uninstall.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/swolfypack/torrent-blocker-test/main/scripts/uninstall.sh | sudo bash
 ```
 
 Скрипт отключит автозапуск, удалит свои правила и исполняемый файл. **Остальные правила firewall не очищаются.** Конфигурация сохраняется для возможной переустановки.
@@ -160,7 +156,7 @@ ENABLE_LOG=0
 
 В Xray можно добавить правило маршрутизации для распознанного BitTorrent и `blackhole` outbound. Это полезно, потому что Xray получает уже расшифрованные данные клиента (после VLESS), тогда как iptables смотрит сетевые пакеты на выходе. **Но sniffing Xray также не гарантирует распознавания шифрованного BitTorrent.**
 
-В файле [`examples/xray-bittorrent-parts.json`](torrent-guard/examples/xray-bittorrent-parts.json) находятся **только фрагменты**, а не готовая конфигурация сервера. В существующем профиле Remnawave:
+В файле [`examples/xray-bittorrent-parts.json`](examples/xray-bittorrent-parts.json) находятся **только фрагменты**, а не готовая конфигурация сервера. В существующем профиле Remnawave:
 
 1. Убедитесь, что у нужных `inbounds` включено `sniffing.enabled = true` и `metadataOnly` не установлен в `true`. Оставьте свои актуальные `destOverride`; значение `bittorrent` **не является** допустимым элементом `destOverride`.
 2. В `outbounds` добавьте `{ "tag": "block-bittorrent", "protocol": "blackhole" }` (если такого тега ещё нет).
@@ -206,7 +202,7 @@ sudo torrent-guard status
 ## Тесты
 
 ```bash
-sudo bash torrent-guard/tests/test.sh
+sudo bash tests/test.sh
 ```
 
 Тесты **не трогают реальный firewall**: симулятор iptables проверяет создание IPv4/IPv6 цепочек, обновление без предварительного удаления старых правил, откат при ошибке вставки, миграцию с v1.0.0, сохранность чужих правил и валидацию конфигурации. Эти тесты **не проверяют реальное совпадение сигнатур ядром** и не заменяют испытания на отдельном VPS.
@@ -229,4 +225,4 @@ sudo bash torrent-guard/tests/test.sh
 - [Docker nftables](https://docs.docker.com/engine/network/firewall-nftables/)
 - [iptables-extensions](https://manpages.debian.org/trixie/iptables/iptables-extensions.8.en.html)
 
-MIT License — [`LICENSE`](torrent-guard/LICENSE).
+MIT License — [`LICENSE`](LICENSE).
