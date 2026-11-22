@@ -1,0 +1,16 @@
+[Unit]
+Description=TorrentGuard BitTorrent traffic filter
+After=network-online.target docker.service
+Wants=network-online.target
+ConditionPathExists=/etc/torrent-guard.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/torrent-guard apply
+ExecReload=/usr/local/sbin/torrent-guard apply
+ExecStop=/usr/local/sbin/torrent-guard remove
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
