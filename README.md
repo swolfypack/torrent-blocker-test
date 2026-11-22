@@ -29,29 +29,34 @@
 
 ## Установка и удаление
 
-> [!NOTE]
-> Команды ниже рассчитаны на **Ubuntu / Debian с systemd** и структуру этого репозитория, в которой проект находится в каталоге `torrent-guard/`. Понадобятся root-права. Перед изменением firewall на удалённой VPS желательно иметь доступ к аварийной консоли хостера.
+> [!IMPORTANT]
+> Команды рассчитаны на **Ubuntu/Debian с systemd** и репозиторий `swolfypack/torrent-blocker-test`, где исходники TorrentGuard находятся в папке `torrent-guard/`. Для изменения firewall нужны root-права. Перед установкой на удалённый VPS рекомендуется иметь доступ к консоли хостера.
+>
+> При выполнении `curl | sudo bash` вы запускаете код из GitHub с правами root. Для более безопасного варианта сначала скачайте и проверьте `install.sh`, затем запустите его отдельно.
 
-### 1. Быстрая установка из GitHub
+### 1. Установка одной командой через curl
+
+Если `curl` ещё не установлен:
 
 ```bash
-sudo apt update
-sudo apt install -y git iptables iproute2 util-linux
-
-git clone https://github.com/swolfypack/torrent-blocker-test.git
-cd torrent-blocker-test/torrent-guard
-
-sudo bash scripts/install.sh
+sudo apt update && sudo apt install -y curl ca-certificates
 ```
 
-Установщик:
+Установка **без `git clone`**:
 
-- Копирует исполняемый файл в `/usr/local/sbin/torrent-guard`.
-- Создаёт `/etc/torrent-guard.conf` из примера, **только если файла ещё нет** (настройки сохраняются при повторной установке).
-- Устанавливает службу `/etc/systemd/system/torrent-guard.service`.
-- Включает автозапуск службы и применяет правила. Если служба уже активна, использует `reload`, а не `restart`, чтобы не удалять правила на время обновления.
+```bash
+curl -fsSL https://raw.githubusercontent.com/swolfypack/torrent-blocker-test/main/install.sh | sudo bash
+```
 
-**Проверьте установку:**
+Корневой [`install.sh`](install.sh) скачивает архив репозитория, проверяет наличие файлов TorrentGuard и запускает обычный `torrent-guard/scripts/install.sh` из временной папки. Для скачивания архива используются `curl` и `tar`; сам установщик требует `iptables`, `iproute2`, `util-linux` и systemd. Если они отсутствуют, установите зависимости:
+
+```bash
+sudo apt update && sudo apt install -y iptables iproute2 util-linux
+```
+
+После установки будут созданы `/usr/local/sbin/torrent-guard`, `/etc/systemd/system/torrent-guard.service` и (при первой установке) `/etc/torrent-guard.conf`. Установщик включит автозапуск и применит правила. При повторной установке существующая конфигурация сохраняется.
+
+**Проверка:**
 
 ```bash
 sudo systemctl status torrent-guard --no-pager
@@ -59,81 +64,61 @@ sudo torrent-guard status
 sudo torrent-guard preview
 ```
 
-> [!IMPORTANT]
-> Фильтр работает **не как отдельный постоянно запущенный процесс**: `torrent-guard.service` — служба `oneshot` с `RemainAfterExit=yes`. Состояние `active (exited)` для неё нормально. Время запуска и наличие цепочек в firewall проверяйте командой `sudo torrent-guard status`.
+> [!NOTE]
+> `torrent-guard.service` — служба типа `oneshot` с `RemainAfterExit=yes`. Для неё состояние `active (exited)` нормально: правила работают в ядре, а не в постоянно запущенном процессе.
 
-### 2. Настройка и применение изменений
-
-Откройте конфигурацию:
+### 2. Конфигурация
 
 ```bash
 sudo nano /etc/torrent-guard.conf
-```
-
-Посмотрите настройки, затем примените их без остановки службы:
-
-```bash
 sudo torrent-guard preview
 sudo systemctl reload torrent-guard
 sudo torrent-guard status
 ```
 
-Для Remnawave Node c `network_mode: host` особенно важен `FILTER_OUTPUT=1`; подробные параметры приведены [ниже](#конфигурация-для-remnawave--xray).
+Для Remnawave Node с `network_mode: host` обычно необходим `FILTER_OUTPUT=1`; рекомендации по настройкам приведены [ниже](#конфигурация-для-remnawave--xray).
 
-### 3. Обновление до последней версии
+### 3. Обновление одной командой
 
-Из ранее клонированного проекта:
-
-```bash
-cd torrent-blocker-test
-git pull --ff-only
-cd torrent-guard
-sudo bash scripts/install.sh
-```
-
-Установщик не перезаписывает `/etc/torrent-guard.conf`. После обновления проверьте `sudo torrent-guard status`.
-
-### 4. Полное удаление программы и правил
-
-**Рекомендуемый способ — через скрипт из репозитория:**
+Повторите команду установки:
 
 ```bash
-cd torrent-blocker-test/torrent-guard
-sudo bash scripts/uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/swolfypack/torrent-blocker-test/main/install.sh | sudo bash
 ```
 
-Скрипт остановит и отключит службу, удалит управляемые правила IPv4/IPv6, исполняемый файл `/usr/local/sbin/torrent-guard` и unit-файл `/etc/systemd/system/torrent-guard.service`, затем обновит systemd. **Другие правила firewall не очищаются.**
-
-Если папки репозитория больше нет, удалить установленную версию можно вручную:
+Установщик обновит программу и службу, но **не перезапишет** ваш `/etc/torrent-guard.conf`. Затем проверьте статус:
 
 ```bash
-sudo systemctl disable --now torrent-guard.service 2>/dev/null || true
-if [ -x /usr/local/sbin/torrent-guard ]; then
-  sudo /usr/local/sbin/torrent-guard remove
-fi
-sudo rm -f /etc/systemd/system/torrent-guard.service /usr/local/sbin/torrent-guard
-sudo systemctl daemon-reload
+sudo torrent-guard status
 ```
 
-**Конфигурация специально сохраняется**, чтобы при переустановке не потерять настройки. Если нужно удалить и её:
+### 4. Удаление через curl
+
+Для удаления установленной программы, службы systemd и управляемых правил IPv4/IPv6 без клонирования репозитория:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/swolfypack/torrent-blocker-test/main/torrent-guard/scripts/uninstall.sh | sudo bash
+```
+
+Скрипт отключит автозапуск, удалит свои правила и исполняемый файл. **Остальные правила firewall не очищаются.** Конфигурация сохраняется для возможной переустановки.
+
+Полностью удалить и настройки:
 
 ```bash
 sudo rm -f /etc/torrent-guard.conf
 ```
 
-Проверка после удаления:
+**Проверка удаления:**
 
 ```bash
 systemctl is-enabled torrent-guard.service 2>/dev/null || true
 command -v torrent-guard || true
-sudo iptables -S | grep -E 'TG_(EGRESS|DROP|INPUT|OUTPUT|FORWARD)' || true
-sudo ip6tables -S | grep -E 'TG_(EGRESS|DROP|INPUT|OUTPUT|FORWARD)' || true
+sudo iptables -S | grep TG_ || true
+sudo ip6tables -S | grep TG_ || true
 ```
 
-Если ранее правила или службы создавались **другими** скриптами, этот деинсталлятор их не удаляет.
-
 > [!CAUTION]
-> `sudo torrent-guard remove` **только снимает правила** — но не отключает systemd-службу, поэтому после перезагрузки правила могут вернуться. Для постоянного отключения без удаления программы используйте `sudo systemctl disable --now torrent-guard.service`. Чтобы снова включить защиту: `sudo systemctl enable --now torrent-guard.service`.
+> Команда `sudo torrent-guard remove` снимает правила, но **не отключает автозапуск**. Для временного отключения программы с сохранением файлов используйте `sudo systemctl disable --now torrent-guard.service`. Чтобы включить снова — `sudo systemctl enable --now torrent-guard.service`.
 
 ### 5. Журнал и диагностика
 
@@ -142,7 +127,7 @@ sudo journalctl -u torrent-guard -n 100 --no-pager
 sudo torrent-guard status
 ```
 
-Если после установки недоступны обычные сайты, DNS или сервисы VPN, проверьте параметры в `/etc/torrent-guard.conf` и временно отключите защиту: `sudo systemctl disable --now torrent-guard.service`. **Не используйте `iptables -F`: эта команда затронет чужие правила, включая Docker и SSH-защиту.**
+Если после установки не работают сайты, DNS или VPN, проверьте `/etc/torrent-guard.conf` и для диагностики отключите защиту: `sudo systemctl disable --now torrent-guard.service`. **Не выполняйте `iptables -F`**: это сотрёт и чужие правила, включая правила Docker.
 
 ## Конфигурация для Remnawave / Xray
 
@@ -175,7 +160,7 @@ ENABLE_LOG=0
 
 В Xray можно добавить правило маршрутизации для распознанного BitTorrent и `blackhole` outbound. Это полезно, потому что Xray получает уже расшифрованные данные клиента (после VLESS), тогда как iptables смотрит сетевые пакеты на выходе. **Но sniffing Xray также не гарантирует распознавания шифрованного BitTorrent.**
 
-В файле [`examples/xray-bittorrent-parts.json`](examples/xray-bittorrent-parts.json) находятся **только фрагменты**, а не готовая конфигурация сервера. В существующем профиле Remnawave:
+В файле [`examples/xray-bittorrent-parts.json`](torrent-guard/examples/xray-bittorrent-parts.json) находятся **только фрагменты**, а не готовая конфигурация сервера. В существующем профиле Remnawave:
 
 1. Убедитесь, что у нужных `inbounds` включено `sniffing.enabled = true` и `metadataOnly` не установлен в `true`. Оставьте свои актуальные `destOverride`; значение `bittorrent` **не является** допустимым элементом `destOverride`.
 2. В `outbounds` добавьте `{ "tag": "block-bittorrent", "protocol": "blackhole" }` (если такого тега ещё нет).
@@ -221,7 +206,7 @@ sudo torrent-guard status
 ## Тесты
 
 ```bash
-sudo bash tests/test.sh
+sudo bash torrent-guard/tests/test.sh
 ```
 
 Тесты **не трогают реальный firewall**: симулятор iptables проверяет создание IPv4/IPv6 цепочек, обновление без предварительного удаления старых правил, откат при ошибке вставки, миграцию с v1.0.0, сохранность чужих правил и валидацию конфигурации. Эти тесты **не проверяют реальное совпадение сигнатур ядром** и не заменяют испытания на отдельном VPS.
@@ -244,4 +229,4 @@ sudo bash tests/test.sh
 - [Docker nftables](https://docs.docker.com/engine/network/firewall-nftables/)
 - [iptables-extensions](https://manpages.debian.org/trixie/iptables/iptables-extensions.8.en.html)
 
-MIT License — [`LICENSE`](LICENSE).
+MIT License — [`LICENSE`](torrent-guard/LICENSE).
