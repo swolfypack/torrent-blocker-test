@@ -27,53 +27,122 @@
 > [!NOTE]
 > Применение поочерёдно к IPv4 и IPv6 и переключение нескольких hook-ов **не являются единой атомарной транзакцией**. На короткое время во время обновления могут действовать и старые, и новые правила. Фильтр не исправляет firewall-конфликты, уже существующие в системе.
 
-## Установка
+## Установка и удаление
+
+> [!NOTE]
+> Команды ниже рассчитаны на **Ubuntu / Debian с systemd** и структуру этого репозитория, в которой проект находится в каталоге `torrent-guard/`. Понадобятся root-права. Перед изменением firewall на удалённой VPS желательно иметь доступ к аварийной консоли хостера.
+
+### 1. Быстрая установка из GitHub
 
 ```bash
 sudo apt update
-sudo apt install -y iptables iproute2 util-linux
+sudo apt install -y git iptables iproute2 util-linux
 
-# Из корня скачанного/распакованного репозитория:
+git clone https://github.com/swolfypack/torrent-blocker-test.git
+cd torrent-blocker-test/torrent-guard
+
 sudo bash scripts/install.sh
 ```
 
-Установщик установит `/usr/local/sbin/torrent-guard`, создаст (если отсутствует) `/etc/torrent-guard.conf`, подключит и запустит `torrent-guard.service`. При обновлении уже работающего сервиса используется **reload**, а не restart. Перед установкой рекомендуется иметь аварийную консоль VPS.
+Установщик:
 
-Если используете старую версию, замените файлы проекта и запустите установщик. Настройки `/etc/torrent-guard.conf` сохранятся; отсутствующий параметр `ENABLE_UDP_TRACKER` получит значение по умолчанию `1`.
+- Копирует исполняемый файл в `/usr/local/sbin/torrent-guard`.
+- Создаёт `/etc/torrent-guard.conf` из примера, **только если файла ещё нет** (настройки сохраняются при повторной установке).
+- Устанавливает службу `/etc/systemd/system/torrent-guard.service`.
+- Включает автозапуск службы и применяет правила. Если служба уже активна, использует `reload`, а не `restart`, чтобы не удалять правила на время обновления.
 
-### Управление
+**Проверьте установку:**
 
 ```bash
-sudo torrent-guard preview       # показать настройки, ничего не менять
-sudo torrent-guard apply         # применить, собрать новую генерацию правил
-sudo torrent-guard status        # активные хуки и счётчики блокировок
-sudo torrent-guard remove        # убрать только правила проекта
-sudo systemctl reload torrent-guard
-sudo systemctl is-active torrent-guard
-sudo journalctl -u torrent-guard -n 100 --no-pager
+sudo systemctl status torrent-guard --no-pager
+sudo torrent-guard status
+sudo torrent-guard preview
 ```
 
-После смены настроек:
+> [!IMPORTANT]
+> Фильтр работает **не как отдельный постоянно запущенный процесс**: `torrent-guard.service` — служба `oneshot` с `RemainAfterExit=yes`. Состояние `active (exited)` для неё нормально. Время запуска и наличие цепочек в firewall проверяйте командой `sudo torrent-guard status`.
+
+### 2. Настройка и применение изменений
+
+Откройте конфигурацию:
 
 ```bash
 sudo nano /etc/torrent-guard.conf
+```
+
+Посмотрите настройки, затем примените их без остановки службы:
+
+```bash
 sudo torrent-guard preview
 sudo systemctl reload torrent-guard
 sudo torrent-guard status
 ```
 
-Чтобы полностью удалить программу и systemd-службу:
+Для Remnawave Node c `network_mode: host` особенно важен `FILTER_OUTPUT=1`; подробные параметры приведены [ниже](#конфигурация-для-remnawave--xray).
+
+### 3. Обновление до последней версии
+
+Из ранее клонированного проекта:
 
 ```bash
+cd torrent-blocker-test
+git pull --ff-only
+cd torrent-guard
+sudo bash scripts/install.sh
+```
+
+Установщик не перезаписывает `/etc/torrent-guard.conf`. После обновления проверьте `sudo torrent-guard status`.
+
+### 4. Полное удаление программы и правил
+
+**Рекомендуемый способ — через скрипт из репозитория:**
+
+```bash
+cd torrent-blocker-test/torrent-guard
 sudo bash scripts/uninstall.sh
 ```
 
-Включение/остановка самого сервиса:
+Скрипт остановит и отключит службу, удалит управляемые правила IPv4/IPv6, исполняемый файл `/usr/local/sbin/torrent-guard` и unit-файл `/etc/systemd/system/torrent-guard.service`, затем обновит systemd. **Другие правила firewall не очищаются.**
+
+Если папки репозитория больше нет, удалить установленную версию можно вручную:
 
 ```bash
-sudo systemctl disable --now torrent-guard  # выключить и убрать правила
-sudo systemctl enable --now torrent-guard   # запустить и включить
+sudo systemctl disable --now torrent-guard.service 2>/dev/null || true
+if [ -x /usr/local/sbin/torrent-guard ]; then
+  sudo /usr/local/sbin/torrent-guard remove
+fi
+sudo rm -f /etc/systemd/system/torrent-guard.service /usr/local/sbin/torrent-guard
+sudo systemctl daemon-reload
 ```
+
+**Конфигурация специально сохраняется**, чтобы при переустановке не потерять настройки. Если нужно удалить и её:
+
+```bash
+sudo rm -f /etc/torrent-guard.conf
+```
+
+Проверка после удаления:
+
+```bash
+systemctl is-enabled torrent-guard.service 2>/dev/null || true
+command -v torrent-guard || true
+sudo iptables -S | grep -E 'TG_(EGRESS|DROP|INPUT|OUTPUT|FORWARD)' || true
+sudo ip6tables -S | grep -E 'TG_(EGRESS|DROP|INPUT|OUTPUT|FORWARD)' || true
+```
+
+Если ранее правила или службы создавались **другими** скриптами, этот деинсталлятор их не удаляет.
+
+> [!CAUTION]
+> `sudo torrent-guard remove` **только снимает правила** — но не отключает systemd-службу, поэтому после перезагрузки правила могут вернуться. Для постоянного отключения без удаления программы используйте `sudo systemctl disable --now torrent-guard.service`. Чтобы снова включить защиту: `sudo systemctl enable --now torrent-guard.service`.
+
+### 5. Журнал и диагностика
+
+```bash
+sudo journalctl -u torrent-guard -n 100 --no-pager
+sudo torrent-guard status
+```
+
+Если после установки недоступны обычные сайты, DNS или сервисы VPN, проверьте параметры в `/etc/torrent-guard.conf` и временно отключите защиту: `sudo systemctl disable --now torrent-guard.service`. **Не используйте `iptables -F`: эта команда затронет чужие правила, включая Docker и SSH-защиту.**
 
 ## Конфигурация для Remnawave / Xray
 
