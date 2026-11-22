@@ -1,0 +1,43 @@
+# TorrentGuard config: copied to /etc/torrent-guard.conf during installation.
+# This file is sourced as a Bash script by root. Keep permissions restricted.
+
+# 1 = enabled, 0 = disabled.
+ENABLE_IPV6=1
+
+# A proxy on the host (Xray/Remnawave network_mode: host) uses OUTPUT.
+FILTER_OUTPUT=1
+
+# Network routing / Docker bridge traffic uses FORWARD.
+FILTER_FORWARD=1
+FILTER_DOCKER_USER=1
+
+# Incoming traffic addressed to the VPS itself. Usually unnecessary for VPN clients.
+FILTER_INPUT=0
+
+# Signature heuristics; effective against *some* open BitTorrent, not encrypted P2P.
+ENABLE_PORTS=1
+ENABLE_DHT=1
+ENABLE_HANDSHAKE=1
+ENABLE_UDP_TRACKER=1
+
+# Known peer/tracker ports. Add/remove ports if they host legitimate services.
+# Ports are separated by spaces (commas also work); ranges use colon.
+TCP_PORTS='6881:6889 51413 6969'
+UDP_PORTS='6881:6889 51413 6969'
+
+# 'auto': find default IPv4 Internet-facing interface (recommended on one-WAN VPS).
+# 'eth0': use the named interface.
+# '': filter ALL egress interfaces (may add overhead / affect internal networks).
+EGRESS_IFACE='auto'
+
+# IPv6 can use another WAN interface. 'auto' detects IPv6 default route.
+IPV6_EGRESS_IFACE='auto'
+
+# IMPORTANT: leave disabled for shared-IP VPN and proxy gateways!
+# Enabling limits forwarded TCP connections per source address (often a container IP).
+# That can block thousands of legitimate users at once.
+ENABLE_CONNLIMIT=0
+CONNLIMIT_MAX=100
+
+# Log actual drops, rate limited to 5 events/minute per protocol family.
+ENABLE_LOG=0
