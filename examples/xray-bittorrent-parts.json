@@ -1,0 +1,22 @@
+{
+  "sniffing": {
+    "enabled": true,
+    "destOverride": ["http", "tls", "quic"],
+    "routeOnly": true
+  },
+  "routing": {
+    "rules": [
+      {
+        "type": "field",
+        "protocol": ["bittorrent"],
+        "outboundTag": "block-bittorrent"
+      }
+    ]
+  },
+  "outbounds": [
+    {
+      "tag": "block-bittorrent",
+      "protocol": "blackhole"
+    }
+  ]
+}
